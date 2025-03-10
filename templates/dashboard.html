@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Machine Status Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Machine Status Dashboard</h1>
+        <span>Last updated: {{ time }}</span>
+    </header>
+
+    <div class="container">
+        <!-- Chart Section -->
+        <div class="chart-card">
+            <button class="collapse-btn" onclick="toggleVisibility('chartSection')">Toggle View</button>
+            <div id="chartSection">
+                <h3>Machine Status Overview</h3>
+                <canvas id="statusChart"></canvas>
+                <canvas id="trendChart" style="margin-top: 20px;"></canvas>
+            </div>
+        </div>
+
+        <!-- Filter and Search -->
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <select id="statusFilter" class="form-select" onchange="filterTable()">
+                    <option value="All">All Machines</option>
+                    <option value="Online">Online</option>
+                    <option value="Offline">Offline</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <input id="searchBar" type="text" class="form-control" placeholder="Search by machine name..." onkeyup="filterTable()">
+            </div>
+        </div>
+
+        <!-- Machine Status Table -->
+        <div class="table-card">
+            <h3>Machine Details</h3>
+            <table class="table" id="machineTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th onclick="sortTable(1)">Machine Name &#x25B4;&#x25BE;</th>
+                        <th onclick="sortTable(2)">Status &#x25B4;&#x25BE;</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for machine, status in status.items() %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td class="machine-name">{{ machine }}</td>
+                        <td class="machine-status">
+                            <span class="{{ 'status-online' if status else 'status-offline' }}">
+                                {{ 'ONLINE' if status else 'OFFLINE' }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <button class="btn btn-primary" onclick="exportTableToCSV('machine_status.csv')">Export as CSV</button>
+    </div>
+
+    <footer>
+        &copy; {{ time.strftime('%Y') }} Machine Monitoring System
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const onlineCount = {{ status.values()|select('equalto', True)|list|length }};
+            const offlineCount = {{ status.values()|select('equalto', False)|list|length }};
+
+            // Status Pie Chart
+            const ctx = document.getElementById('statusChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['Online', 'Offline'],
+                    datasets: [{
+                        label: 'Machine Status',
+                        data: [onlineCount, offlineCount],
+                        backgroundColor: ['#28a745', '#dc3545'],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+
+            // Status Trend Bar Chart
+            const trendCtx = document.getElementById('trendChart').getContext('2d');
+            new Chart(trendCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Now', '-5m', '-10m', '-15m'], // Example time intervals
+                    datasets: [{
+                        label: 'Online Machines',
+                        data: [onlineCount, onlineCount - 5, onlineCount - 8, onlineCount - 10],
+                        backgroundColor: '#28a745'
+                    }, {
+                        label: 'Offline Machines',
+                        data: [offlineCount, offlineCount + 5, offlineCount + 8, offlineCount + 10],
+                        backgroundColor: '#dc3545'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        });
+
+        // Table Filters
+        function filterTable() {
+            const filter = document.getElementById('statusFilter').value.toLowerCase();
+            const search = document.getElementById('searchBar').value.toLowerCase();
+            const rows = document.querySelectorAll('#machineTable tbody tr');
+            
+            rows.forEach(row => {
+                const name = row.querySelector('.machine-name').textContent.toLowerCase();
+                const status = row.querySelector('.machine-status span').textContent.toLowerCase();
+                
+                if ((filter === 'all' || status.includes(filter)) && name.includes(search)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        // Sort Table
+        function sortTable(columnIndex) {
+            const table = document.getElementById('machineTable');
+            const rows = Array.from(table.rows).slice(1);
+            const isAscending = table.getAttribute('data-sort-asc') === 'true';
+            
+            rows.sort((a, b) => {
+                const cellA = a.cells[columnIndex].textContent.trim();
+                const cellB = b.cells[columnIndex].textContent.trim();
+                return isAscending ? cellA.localeCompare(cellB) : cellB.localeCompare(cellA);
+            });
+            
+            table.setAttribute('data-sort-asc', !isAscending);
+            rows.forEach(row => table.tBodies[0].appendChild(row));
+        }
+
+        // Export to CSV
+        function exportTableToCSV(filename) {
+            const rows = document.querySelectorAll('#machineTable tr');
+            let csv = Array.from(rows)
+                .map(row => Array.from(row.cells).map(cell => cell.textContent).join(','))
+                .join('\n');
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
+        }
+
+        // Collapse/Expand Chart Section
+        function toggleVisibility(sectionId) {
+            const section = document.getElementById(sectionId);
+            section.style.display = section.style.display === 'none' ? 'block' : 'none';
+        }
+    </script>
+</body>
+</html>
